@@ -3,7 +3,7 @@ open Eio.Std
 let n_fibers = [1; 2; 3; 4; 5; 10; 20; 30; 40; 50; 100; 500; 1000; 10000]
 
 let main ~clock =
-  Printf.printf "n_fibers, ns/iter, promoted/iter\n%!";
+  (* Printf.printf "n_fibers, ns/iter, promoted/iter\n%!"; *)
   n_fibers |> List.iter (fun n_fibers ->
       let n_iters = 1000000 / n_fibers in
       Gc.full_major ();

@@ -1,5 +1,5 @@
 open Eio.Std
-
+open Benchmark_result
 (* A publisher keeps updating a counter and signalling a condition.
    Two consumers read the counter whenever they get a signal.
    The producer stops after signalling [target], and the consumers stop after seeing it. *)
@@ -36,6 +36,11 @@ let run_bench ?domain_mgr ~clock () =
     | Some dm -> Eio.Domain_manager.run dm (fun () -> run_consumer cond v)
     | None -> run_consumer cond v
   in
+  let name str =
+    match domain_mgr with
+    | Some _ -> str ^ "_domain"
+    | None -> str
+  in
   Gc.full_major ();
   let _minor0, prom0, _major0 = Gc.counters () in
   let t0 = Eio.Time.now clock in
@@ -51,15 +56,23 @@ let run_bench ?domain_mgr ~clock () =
   let time_per_iter = time_total /. float n_iters in
   let _minor1, prom1, _major1 = Gc.counters () in
   let prom = prom1 -. prom0 in
-  Printf.printf "%11b, %7.2f, %13.4f\n%!" (domain_mgr <> None) (1e3 *. time_per_iter) (prom /. float n_iters)
+  (* Printf.printf "%11b, %7.2f, %13.4f\n%!" (domain_mgr <> None) (1e3 *. time_per_iter) (prom /. float n_iters) *)
+  Metric.create (name "ms/iter") (`Numeric (1e3 *. time_per_iter)) "ms/iter" "ms per iteration" ::
+  Metric.create (name "promoted/iter") (`Numeric (prom /. float n_iters)) "promoted/iter" "promoted per iteration" ::
+  []
 
 let main ~domain_mgr ~clock =
-  Printf.printf "use_domains,  ms/iter, promoted/iter\n%!";
-  run_bench ~clock ();
+  (* Printf.printf "use_domains,  ms/iter, promoted/iter\n%!"; *)
+  run_bench ~clock () @
   run_bench ~domain_mgr ~clock ()
 
-let () =
+let metric_list () =
   Eio_main.run @@ fun env ->
   main
     ~domain_mgr:(Eio.Stdenv.domain_mgr env)
     ~clock:(Eio.Stdenv.clock env)
+
+let bench_condition () =
+  let metrics = metric_list () in
+  let res = {name = "bench_condition"; metrics} in
+  res
