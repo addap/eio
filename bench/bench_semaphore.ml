@@ -1,5 +1,5 @@
 open Eio.Std
-
+open Benchmark_result
 (* Simulate other work in the domain, and also prevent it from going to sleep.
    Otherwise, we're just measuring how long it takes the OS to wake a sleeping thread. *)
 let rec spin () =
@@ -43,22 +43,27 @@ let run_bench ~domain_mgr ~clock ~use_domains ~n_iters ~n_resources =
   let time_per_iter = time_total /. float n_iters in
   let _minor1, prom1, _major1 = Gc.counters () in
   let prom = prom1 -. prom0 in
-  Printf.printf "%11b, %8d, %11d, %8.2f, %13.4f\n%!" use_domains n_iters n_resources (1e9 *. time_per_iter) (prom /. float n_iters)
+  Metric.create ("time_per_iter/" ^ (string_of_int n_iters) ^ "/" ^ (string_of_int n_resources)) (`Numeric (1e9 *. time_per_iter)) "ns/iter" "Time taken per iteration" ::
+  Metric.create ("promoted_per_iter/" ^ (string_of_int n_iters) ^ "/" ^ (string_of_int n_resources)) (`Numeric (prom /. float n_iters)) "promoted/iter" "No. of promotions" :: []
+  (* Printf.printf "%11b, %8d, %11d, %8.2f, %13.4f\n%!" use_domains n_iters n_resources (1e9 *. time_per_iter) (prom /. float n_iters) *)
 
 let main ~domain_mgr ~clock =
-  Printf.printf "use_domains,   n_iters,  resources, ns/iter, promoted/iter\n%!";
+  let metrics =
   [false, 100_000, 2;
    false, 100_000, 3;
    false, 100_000, 4;
    true,   10_000, 2;
    true,   10_000, 3;
    true,   10_000, 4]
-  |> List.iter (fun (use_domains, n_iters, n_resources) ->
+  |> List.map (fun (use_domains, n_iters, n_resources) ->
       run_bench ~domain_mgr ~clock ~use_domains ~n_iters ~n_resources
-    )
+    ) in
+  List.flatten metrics
 
-let () =
+let bench_semaphore () =
   Eio_main.run @@ fun env ->
-  main
+    let metrics = main
     ~domain_mgr:(Eio.Stdenv.domain_mgr env)
-    ~clock:(Eio.Stdenv.clock env)
+    ~clock:(Eio.Stdenv.clock env) in
+    let res = {name = "bench_semaphore"; metrics} in
+    res

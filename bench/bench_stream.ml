@@ -3,7 +3,7 @@
    It also tests the single-domain case. *)
 
 open Eio.Std
-
+open Benchmark_result
 let n_sender_fibers = 10        (* Concurrent sending fibers per sending domain *)
 
 (* Simulate other work in the domain, and also prevent it from going to sleep.
@@ -70,23 +70,31 @@ let run_bench ~domain_mgr ~clock ~n_send_domains ~n_iters ~capacity =
     let time_per_iter = time_total /. float n_iters_total in
     let _minor1, prom1, _major1 = Gc.counters () in
     let prom = prom1 -. prom0 in
-    Printf.printf "%14d, %8d, %8d, %7.2f, %13.4f\n%!" n_send_domains n_iters_total capacity (1e9 *. time_per_iter) (prom /. float n_iters_total)
+    (* Printf.printf "%14d, %8d, %8d, %7.2f, %13.4f\n%!" n_send_domains n_iters_total capacity (1e9 *. time_per_iter) (prom /. float n_iters_total) *)
+    Metric.create ("time_per_iter/stream/" ^ (string_of_int n_send_domains) ^ "/" ^ (string_of_int n_iters) ^ "/" ^ (string_of_int capacity))
+      (`Numeric (1e9 *. time_per_iter)) "ns/iter" "time_per_iter/stream/n_send_domains/n_iters/capacity" ::
+    Metric.create ("promoted_per_iter/stream/" ^ (string_of_int n_send_domains) ^ "/" ^ (string_of_int n_iters) ^ "/" ^ (string_of_int capacity))
+      (`Numeric (prom /. float n_iters_total)) "promoted/iter" "promoted_per_iter/stream/n_send_domains/n_iters/capacity" :: []
 
 let main ~domain_mgr ~clock =
-  Printf.printf "n_send_domains,  n_iters, capacity, ns/iter, promoted/iter\n%!";
+  (* Printf.printf "n_send_domains,  n_iters, capacity, ns/iter, promoted/iter\n%!"; *)
+  let metrics =
   [0, 100_000;
    1, 100_000;
    2, 100_000;
    4, 100_000;
   ]
-  |> List.iter (fun (n_send_domains, n_iters) ->
-      [0; 1; 100] |> List.iter (fun capacity ->
+  |> List.map (fun (n_send_domains, n_iters) ->
+      [0; 1; 100] |> List.map (fun capacity ->
           run_bench ~domain_mgr ~clock ~n_send_domains ~n_iters ~capacity
         )
-    )
+    ) in
+  List.flatten @@ List.flatten metrics
 
-let () =
+let bench_stream () =
   Eio_main.run @@ fun env ->
-  main
+    let metrics = main
     ~domain_mgr:(Eio.Stdenv.domain_mgr env)
-    ~clock:(Eio.Stdenv.clock env)
+    ~clock:(Eio.Stdenv.clock env) in
+    let res = {name = "bench_stream"; metrics} in
+    res

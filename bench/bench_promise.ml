@@ -1,4 +1,5 @@
 open Eio.Std
+open Benchmark_result
 
 type request = {
   req_body : int;
@@ -52,8 +53,9 @@ let bench_resolved ~clock ~n_iters =
     t := !t + Promise.await p;
   done;
   let t1 = Eio.Time.now clock in
-  Printf.printf "Reading a resolved promise: %.3f ns\n%!" (1e9 *. (t1 -. t0) /. float n_iters);
-  assert (!t = n_iters)
+  (* Printf.printf "Reading a resolved promise: %.3f ns\n%!" (1e9 *. (t1 -. t0) /. float n_iters); *)
+  assert (!t = n_iters);
+  Metric.create "read_time" (`Numeric (1e9 *. (t1 -. t0) /. float n_iters)) "ns" "Reading a resolved promise"
 
 let maybe_spin v fn =
   if v then Fiber.first spin fn
@@ -82,20 +84,25 @@ let run_bench ~domain_mgr ~spin ~clock ~use_domains ~n_iters =
   let _minor1, prom1, _major1 = Gc.counters () in
   let prom = prom1 -. prom0 in
   let domains = Printf.sprintf "%b/%b" use_domains spin in
-  Printf.printf "%11s, %8d, %8.2f, %13.4f\n%!" domains n_iters (1e9 *. time_per_iter) (prom /. float n_iters)
+  (* Printf.printf "%11s, %8d, %8.2f, %13.4f\n%!" domains n_iters (1e9 *. time_per_iter) (prom /. float n_iters) *)
+  Metric.create ("time_per_iter/" ^ (string_of_int n_iters) ^ "/" ^ domains) (`Numeric (1e9 *. time_per_iter)) "ns/iter" "time_per_iter/n_iters/domains/spin" ::
+  Metric.create ("promotions_per_iter/" ^ (string_of_int n_iters) ^ "/" ^ domains) (`Numeric (prom /. float n_iters)) "promotions/iter" "promotions_per_iter/n_iters/domains/spin" :: []
 
 let main ~domain_mgr ~clock =
-  bench_resolved ~clock ~n_iters:(10_000_000);
-  Printf.printf "domains/spin, n_iters,  ns/iter, promoted/iter\n%!";
-  [false, false, 1_000_000;
+  let resolved = bench_resolved ~clock ~n_iters:(10_000_000) in
+  (* Printf.printf "domains/spin, n_iters,  ns/iter, promoted/iter\n%!"; *)
+  let metrics = [false, false, 1_000_000;
    true,  true,    100_000;
    true,  false,   100_000]
-  |> List.iter (fun (use_domains, spin, n_iters) ->
+  |> List.map (fun (use_domains, spin, n_iters) ->
       run_bench ~domain_mgr ~spin ~clock ~use_domains ~n_iters
-    )
+  ) in
+  resolved :: (List.flatten metrics)
 
-let () =
+let bench_promise () =
   Eio_main.run @@ fun env ->
-  main
+    let metrics = main
     ~domain_mgr:(Eio.Stdenv.domain_mgr env)
-    ~clock:(Eio.Stdenv.clock env)
+    ~clock:(Eio.Stdenv.clock env) in
+    let results = {name = "bench_stream"; metrics} in
+    results
