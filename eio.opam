@@ -24,6 +24,7 @@ depends: [
   "alcotest" {>= "1.4.0" & with-test}
   "dscheck" {>= "0.1.0" & with-test}
   "odoc" {with-doc}
+  "yojson" {>= "2.0.2" & with-test}
 ]
 conflicts: [
   "ocaml-base-compiler" {< "5.0.0~beta1"}
