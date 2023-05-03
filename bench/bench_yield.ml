@@ -35,5 +35,5 @@ let main ~clock =
 let bench_yield () =
   Eio_main.run @@ fun env ->
   let metrics = main ~clock:(Eio.Stdenv.clock env) in
-  let res = {name = "bench_yield"; metrics} in
-  res
+  let results = {name = "bench_yield"; metrics} in
+  results

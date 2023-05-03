@@ -96,5 +96,5 @@ let bench_stream () =
     let metrics = main
     ~domain_mgr:(Eio.Stdenv.domain_mgr env)
     ~clock:(Eio.Stdenv.clock env) in
-    let res = {name = "bench_stream"; metrics} in
-    res
+    let results = {name = "bench_stream"; metrics} in
+    results

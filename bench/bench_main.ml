@@ -15,9 +15,12 @@ let bench_semaphore = Bench_semaphore.bench_semaphore
 let bench_stream = Bench_stream.bench_stream
 
 let bench_promise = Bench_promise.bench_promise
+
+let bench_http = Bench_http.bench_http
 let bench_list =
   [bench_cancel; bench_fd; bench_condition; bench_buf;
-   bench_yield; bench_mutex; bench_semaphore; bench_stream; bench_promise]
+   bench_yield; bench_mutex; bench_semaphore; bench_stream;
+   bench_promise; bench_http]
 
 let () =
   let results =

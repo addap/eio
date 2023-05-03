@@ -1,7 +1,7 @@
 (* A multi-domain server handles HTTP-like requests from many clients running across multiple domains. *)
 
 open Eio.Std
-
+open Benchmark_result
 (* Note: this is not a real HTTP parser! *)
 let key_char = function
   | 'A'..'Z' | 'a'..'z' | '-' -> true
@@ -88,22 +88,26 @@ let main net domain_mgr ~n_client_domains ~n_server_domains ~n_connections_per_d
       done
     );
   let t1 = Unix.gettimeofday () in
-  Fmt.pr "clients, servers, requests, requests/s@.";
+  (* Fmt.pr "clients, servers, requests, requests/s@."; *)
   let requests = n_connections_per_domain * n_client_domains * n_requests_per_connection in
   assert (requests = Atomic.get total);
   let req_per_s = float requests /. (t1 -. t0) in
-  Fmt.pr "%7d, %7d, %8d, %.1f@." n_client_domains n_server_domains requests req_per_s
+  Metric.create ("request_rate/" ^ (string_of_int requests) ^ "/" ^ (string_of_int n_client_domains) ^ "/" ^ (string_of_int n_server_domains))
+   (`Numeric req_per_s) "requests/s" "request_rate/requests/n_client_domain/n_server_domains"
+  (* Fmt.pr "%7d, %7d, %8d, %.1f@." n_client_domains n_server_domains requests req_per_s *)
 
-let () =
+let bench_http () =
   print_endline "";     (* work around dune bug *)
   Eio_main.run @@ fun env ->
   let main = main env#net env#domain_mgr in
-  match Sys.argv with
-  | [| _ |] -> main ~n_client_domains:4 ~n_server_domains:4 ~n_connections_per_domain:25 ~n_requests_per_connection:1000
-  | [| _; n_client_domains; n_server_domains; n_connections_per_domain; n_requests_per_connection |] ->
+  let metrics = main ~n_client_domains:4 ~n_server_domains:4 ~n_connections_per_domain:25 ~n_requests_per_connection:1000
+  (* | [| _; n_client_domains; n_server_domains; n_connections_per_domain; n_requests_per_connection |] ->
     main
       ~n_client_domains:(int_of_string n_client_domains)
       ~n_server_domains:(int_of_string n_server_domains)
       ~n_connections_per_domain:(int_of_string n_connections_per_domain)
       ~n_requests_per_connection:(int_of_string n_requests_per_connection)
-  | _ -> Fmt.failwith "usage: bench_http [clients servers connections_per_domain requests_per_connection]"
+  | _ -> Fmt.failwith "usage: bench_http [clients servers connections_per_domain requests_per_connection]" *)
+  in
+  let results = {name = "bench_http"; metrics = [metrics]} in
+  results

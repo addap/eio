@@ -63,9 +63,9 @@ let bench_cancel () =
   let metrics = (main
     ~domain_mgr:(Eio.Stdenv.domain_mgr env)
     ~clock:(Eio.Stdenv.clock env)) in
-  let res = {name = "cancel_bench"; metrics} in
+  let results = {name = "cancel_bench"; metrics} in
   (* Printf.printf "%s\n" res; *)
-  res
+  results
   (* let output =
     Printf.sprintf {| {"name": "Bench_cancel", "results": [%s]}|} res in
   Printf.printf "%s\n" (Yojson.Basic.prettify output) *)
