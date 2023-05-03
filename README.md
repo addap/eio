@@ -50,10 +50,11 @@ Eio replaces existing concurrency libraries such as Lwt
   * [Async](#async)
   * [Lwt](#lwt)
   * [Unix and System Threads](#unix-and-system-threads)
+  * [Domainslib](#domainslib)
 * [Best Practices](#best-practices)
   * [Switches](#switches-1)
   * [Casting](#casting)
-  * [Passing Stdenv.t](#passing-stdenvt)
+  * [Passing env](#passing-env)
 * [Further Reading](#further-reading)
 
 <!-- vim-markdown-toc -->
@@ -92,10 +93,9 @@ See [Awesome Multicore OCaml][] for links to work migrating other projects to Ei
 
 - [Eio][] provides concurrency primitives (promises, etc.) and a high-level, cross-platform OS API.
 - [Eio_posix][] provides a cross-platform backend for these APIs for POSIX-type systems.
-- [Eio_luv][] provides a cross-platform backend for these APIs using [luv](https://github.com/aantron/luv) (libuv).
 - [Eio_linux][] provides a Linux io-uring backend for these APIs,
   plus a low-level API that can be used directly (in non-portable code).
-- [Eio_main][] selects an appropriate backend (e.g. `eio_linux`, `eio_posix` or `eio_luv`), depending on your platform.
+- [Eio_main][] selects an appropriate backend (e.g. `eio_linux` or `eio_posix`), depending on your platform.
 
 ## Getting OCaml 5.0
 
@@ -244,6 +244,9 @@ The file is a ring buffer, so when it gets full, old events will start to be ove
 This shows the two counting threads as two horizonal lines.
 The white regions indicate when each thread was running.
 Note that the output from `traceln` appears in the trace as well as on the console.
+
+The [Meio][] (Monitoring for Eio) project provides an interactive console-based UI for exploring running fibers,
+using the new runtime events support in OCaml 5.1.
 
 ## Cancellation
 
@@ -511,7 +514,7 @@ See [examples/net](./examples/net/) for a more complete example.
 
 ## Design Note: Capabilities
 
-Eio follows the principles of [capability-based security][].
+Eio follows the principles of capability-based security.
 The key idea here is that the lambda calculus already contains a perfectly good security system:
 a function can only access things that are in its scope.
 If we can avoid breaking this model (for example, by adding global variables to our language)
@@ -541,27 +544,12 @@ In a capability-safe language, we don't have to read the entire code-base to fin
   We could make that code easier to audit by passing it `(fun () -> Eio.Net.connect net addr)` instead of `net` .
   Then we could see that `run_client` could only connect to our loopback address.
 
-Some key features required for a capability system are:
-
-1. The language must be memory-safe.
-   OCaml allows all code to use e.g. `Obj.magic` or `Array.unsafe_set`.
-
-2. The default scope must not provide access to the outside world.
-   OCaml's `Stdlib.open_in` gives all code access to the file-system.
-
-3. No top-level mutable state.
-   In OCaml, if two libraries use a module `Foo` with top-level mutable state, then they could communicate using that
-   without first being introduced to each other by the main application code.
-
-4. APIs should make it easy to restrict access.
-   For example, having a "directory" should allow access to that sub-tree of the file-system only.
-   If the file-system abstraction provides a `get_parent` function then access to any directory is
-   equivalent to access to everything.
-
 Since OCaml is not a capability language, code can ignore Eio and use the non-capability APIs directly.
-However, it still makes non-malicious code easier to understand and test
+However, it still makes non-malicious code easier to understand and test,
 and may allow for an extension to the language in the future.
-See [Emily][] for a previous attempt at this.
+
+The [Lambda Capabilities][] blog post provides a more detailed introduction to capabilities,
+written for functional programmers.
 
 ## Buffered Reading and Parsing
 
@@ -701,7 +689,7 @@ For example:
 let test r =
   try Eio.Buf_read.line r
   with
-  | Eio.Io (Eio.Net.E Connection_reset Eio_luv.Luv_error _, _) -> "Luv connection reset"
+  | Eio.Io (Eio.Net.E Connection_reset Eio_unix.Unix_error _, _) -> "Unix connection reset"
   | Eio.Io (Eio.Net.E Connection_reset _, _) -> "Connection reset"
   | Eio.Io (Eio.Net.E _, _) -> "Some network error"
   | Eio.Io _ -> "Some I/O error"
@@ -757,11 +745,11 @@ it can be annoying to have the full backend-specific error displayed:
   Switch.run @@ fun sw ->
   Eio.Net.connect ~sw net (`Tcp (Eio.Net.Ipaddr.V4.loopback, 1234));;
 Exception:
-Eio.Io Net Connection_failure Refused Eio_luv.Luv_error(ECONNREFUSED) (* connection refused *),
+Eio.Io Net Connection_failure Refused Unix_error (Connection refused, "connect", ""),
   connecting to tcp:127.0.0.1:1234
 ```
 
-If we ran this using e.g. the Linux io_uring backend, the `Luv_error` part would change.
+If we ran this using another backend, the `Unix_error` part might change.
 To avoid this problem, you can use `Eio.Exn.Backend.show` to hide the backend-specific part of errors:
 
 ```ocaml
@@ -886,10 +874,6 @@ and this allows following symlinks within that subtree.
 A program that operates on the current directory will probably want to use `cwd`,
 whereas a program that accepts a path from the user will probably want to use `fs`,
 perhaps with `open_dir` to constrain all access to be within that directory.
-
-Note: the `eio_luv` backend doesn't have the `openat`, `mkdirat`, etc.,
-calls that are necessary to implement these checks without races,
-so be careful if symlinks out of the subtree may be created while the program is running.
 
 ## Time
 
@@ -1583,6 +1567,43 @@ The [Eio_unix][] module provides features for using Eio with OCaml's Unix module
 In particular, `Eio_unix.run_in_systhread` can be used to run a blocking operation in a separate systhread,
 allowing it to be used within Eio without blocking the whole domain.
 
+### Domainslib
+
+For certain compute-intensive tasks it may be useful to send work to a pool of [Domainslib][] worker domains.
+You can resolve an Eio promise from non-Eio domains (or systhreads), which provides an easy way to retrieve the result.
+For example:
+
+<!-- $MDX skip -->
+```ocaml
+open Eio.Std
+
+let pool = Domainslib.Task.setup_pool ~num_domains:2 ()
+
+let fib n = ... (* Some Domainslib function *)
+
+let run_in_pool fn x =
+  let result, set_result = Promise.create () in
+  let _ : unit Domainslib.Task.promise = Domainslib.Task.async pool (fun () ->
+      Promise.resolve set_result @@
+      match fn x with
+      | r -> Ok r
+      | exception ex -> Error ex
+    )
+  in
+  Promise.await_exn result
+
+let () =
+  Eio_main.run @@ fun _ ->
+  Fiber.both
+    (fun () -> traceln "fib 30 = %d" (run_in_pool fib 30))
+    (fun () -> traceln "fib 10 = %d" (run_in_pool fib 10))
+```
+
+Note that most Domainslib functions can only be called from code running in the Domainslib pool,
+while most Eio functions can only be used from Eio domains.
+The bridge function `run_in_pool` makes use of the fact that `Domainslib.Task.async` is able to run from
+an Eio domain, and `Eio.Promise.resolve` is able to run from a Domainslib one.
+
 ## Best Practices
 
 This section contains some recommendations for designing library APIs for use with Eio.
@@ -1654,7 +1675,7 @@ end
 
 Note: the `#type` syntax only works on types defined by classes, whereas the slightly more verbose `<type; ..>` works on all object types.
 
-### Passing Stdenv.t
+### Passing env
 
 The `env` value you get from `Eio_main.run` is a powerful capability,
 and programs are easier to understand when it's not passed around too much.
@@ -1713,8 +1734,6 @@ Some background about the effects system can be found in:
 [Lwt_eio]: https://github.com/ocaml-multicore/lwt_eio
 [mirage-trace-viewer]: https://github.com/talex5/mirage-trace-viewer
 [structured concurrency]: https://en.wikipedia.org/wiki/Structured_concurrency
-[capability-based security]: https://en.wikipedia.org/wiki/Object-capability_model
-[Emily]: https://www.hpl.hp.com/techreports/2006/HPL-2006-116.pdf
 [gemini-eio]: https://gitlab.com/talex5/gemini-eio
 [Awesome Multicore OCaml]: https://github.com/ocaml-multicore/awesome-multicore-ocaml
 [Eio]: https://ocaml-multicore.github.io/eio/eio/Eio/index.html
@@ -1732,7 +1751,6 @@ Some background about the effects system can be found in:
 [Eio.Promise]: https://ocaml-multicore.github.io/eio/eio/Eio/Promise/index.html
 [Eio.Stream]: https://ocaml-multicore.github.io/eio/eio/Eio/Stream/index.html
 [Eio_posix]: https://github.com/ocaml-multicore/eio/blob/main/lib_eio_posix/eio_posix.mli
-[Eio_luv]: https://ocaml-multicore.github.io/eio/eio_luv/Eio_luv/index.html
 [Eio_linux]: https://ocaml-multicore.github.io/eio/eio_linux/Eio_linux/index.html
 [Eio_main]: https://ocaml-multicore.github.io/eio/eio_main/Eio_main/index.html
 [Eio.traceln]: https://ocaml-multicore.github.io/eio/eio/Eio/index.html#val-traceln
@@ -1743,3 +1761,6 @@ Some background about the effects system can be found in:
 [Eio.Mutex]: https://ocaml-multicore.github.io/eio/eio/Eio/Mutex/index.html
 [Eio.Semaphore]: https://ocaml-multicore.github.io/eio/eio/Eio/Semaphore/index.html
 [Eio.Condition]: https://ocaml-multicore.github.io/eio/eio/Eio/Condition/index.html
+[Domainslib]: https://github.com/ocaml-multicore/domainslib
+[Meio]: https://github.com/tarides/meio
+[Lambda Capabilities]: https://roscidus.com/blog/blog/2023/04/26/lambda-capabilities/
