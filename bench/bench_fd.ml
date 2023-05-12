@@ -17,19 +17,19 @@ let main ~domain_mgr zero =
   let run1 () =
     for _ = 1 to iters do Eio.Flow.read_exact zero buf done
   in
-  time "1_fiber" (iters * len) run1 ::
+  [time "1_fiber" (iters * len) run1;
   time (Fmt.str "%d_fibers" n_fibers) (iters * n_fibers * len) (fun () ->
       Switch.run @@ fun sw ->
       for _ = 1 to n_fibers do
         Fiber.fork ~sw run1
       done
-    ) ::
+    );
   time (Fmt.str "%d_domains" n_domains) (iters * n_domains * len) (fun () ->
       Switch.run @@ fun sw ->
       for _ = 1 to n_domains do
         Fiber.fork ~sw (fun () -> Eio.Domain_manager.run domain_mgr run1)
       done
-    ) :: []
+    )]
 
 let ( / ) = Eio.Path.( / )
 

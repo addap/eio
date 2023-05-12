@@ -16,7 +16,6 @@ let run_sender ~iters_per_thread mutex =
 let run_bench ~domain_mgr ~clock ~use_domains ~iters_per_thread ~threads =
   let mutex = Eio.Mutex.create () in
   Gc.full_major ();
-  let _minor0, prom0, _major0 = Gc.counters () in
   let t0 = Eio.Time.now clock in
   Switch.run (fun sw ->
       for _ = 1 to threads do
@@ -35,11 +34,7 @@ let run_bench ~domain_mgr ~clock ~use_domains ~iters_per_thread ~threads =
   let time_total = t1 -. t0 in
   let n_iters = iters_per_thread * threads in
   let time_per_iter = time_total /. float n_iters in
-  let _minor1, prom1, _major1 = Gc.counters () in
-  let prom = prom1 -. prom0 in
-  Metric.create ("time_per_iter/" ^ (string_of_int n_iters) ^ "/" ^ (string_of_int threads)) (`Numeric (1e9 *. time_per_iter)) "ns/iter" "Time taken per iteration" ::
-  Metric.create ("promoted_per_iter/" ^ (string_of_int n_iters) ^ "/" ^ (string_of_int threads)) (`Numeric (prom /. float n_iters)) "promoted/iter" "No. of promotions" :: []
-  (* Printf.printf "%11b, %12d, %8d, %8.2f, %13.4f\n%!" use_domains n_iters threads (1e9 *. time_per_iter) (prom /. float n_iters) *)
+  Metric.create ("time_per_iter/" ^ (string_of_int n_iters) ^ "_" ^ (string_of_int threads)) (`Numeric (1e9 *. time_per_iter)) "ns/iter" "Time taken per iteration"
 
 let main ~domain_mgr ~clock =
   let metrics =
@@ -50,9 +45,9 @@ let main ~domain_mgr ~clock =
    true,     10_000, 2;
    true,     10_000, 8]
   |> List.map (fun (use_domains, iters_per_thread, threads) ->
-      run_bench ~domain_mgr ~clock ~use_domains ~iters_per_thread ~threads
-    ) in
-  List.flatten metrics
+      run_bench ~domain_mgr ~clock ~use_domains ~iters_per_thread ~threads)
+  in
+  metrics
 
 let bench_mutex () =
   Eio_main.run @@ fun env ->

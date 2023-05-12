@@ -64,7 +64,6 @@ let maybe_spin v fn =
 let run_bench ~domain_mgr ~spin ~clock ~use_domains ~n_iters =
   let init_p, init_r = Promise.create () in
   Gc.full_major ();
-  let _minor0, prom0, _major0 = Gc.counters () in
   let t0 = Eio.Time.now clock in
   Fiber.both
     (fun () ->
@@ -81,28 +80,23 @@ let run_bench ~domain_mgr ~spin ~clock ~use_domains ~n_iters =
   let t1 = Eio.Time.now clock in
   let time_total = t1 -. t0 in
   let time_per_iter = time_total /. float n_iters in
-  let _minor1, prom1, _major1 = Gc.counters () in
-  let prom = prom1 -. prom0 in
-  let domains = Printf.sprintf "%b/%b" use_domains spin in
-  (* Printf.printf "%11s, %8d, %8.2f, %13.4f\n%!" domains n_iters (1e9 *. time_per_iter) (prom /. float n_iters) *)
-  Metric.create ("time_per_iter/" ^ (string_of_int n_iters) ^ "/" ^ domains) (`Numeric (1e9 *. time_per_iter)) "ns/iter" "time_per_iter/n_iters/domains/spin" ::
-  Metric.create ("promotions_per_iter/" ^ (string_of_int n_iters) ^ "/" ^ domains) (`Numeric (prom /. float n_iters)) "promotions/iter" "promotions_per_iter/n_iters/domains/spin" :: []
+  let domains = Printf.sprintf "%b_%b" use_domains spin in
+  Metric.create ("time_per_iter/" ^ (string_of_int n_iters) ^ "_" ^ domains) (`Numeric (1e9 *. time_per_iter)) "ns/iter" "time_per_iter/n_iters/domains/spin"
 
 let main ~domain_mgr ~clock =
   let resolved = bench_resolved ~clock ~n_iters:(10_000_000) in
-  (* Printf.printf "domains/spin, n_iters,  ns/iter, promoted/iter\n%!"; *)
   let metrics = [false, false, 1_000_000;
    true,  true,    100_000;
    true,  false,   100_000]
   |> List.map (fun (use_domains, spin, n_iters) ->
       run_bench ~domain_mgr ~spin ~clock ~use_domains ~n_iters
   ) in
-  resolved :: (List.flatten metrics)
+  resolved :: metrics
 
 let bench_promise () =
   Eio_main.run @@ fun env ->
     let metrics = main
     ~domain_mgr:(Eio.Stdenv.domain_mgr env)
     ~clock:(Eio.Stdenv.clock env) in
-    let results = {name = "bench_stream"; metrics} in
+    let results = {name = "bench_promise"; metrics} in
     results
