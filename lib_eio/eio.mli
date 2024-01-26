@@ -16,6 +16,24 @@
 (** Commonly used standard features. This module is intended to be [open]ed. *)
 module Std = Std
 
+module Thin : sig
+  include module type of Eio__thin
+  val main0 : unit -> unit
+  val main1 : unit -> unit
+  val main2 : unit -> unit
+  val main3 : unit -> unit
+end
+
+module ThinStd : sig
+  module Promise = Eio__thin.Promise
+  module Fiber = Eio__thin.Fiber
+
+  val traceln :
+    ?__POS__:string * int * int * int ->
+    ('a, Format.formatter, unit, unit) format4 -> 'a
+    (** Same as {!Eio.traceln}. *)
+end
+
 (** {1 Fibers} *)
 
 (** Grouping fibers and other resources so they can be turned off together. *)

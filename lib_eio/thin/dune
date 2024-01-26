@@ -1,0 +1,4 @@
+(library
+ (name eio__thin)
+ (public_name eio.thin)
+ (libraries cstruct hmap lwt-dllist fmt optint))

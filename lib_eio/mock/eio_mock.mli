@@ -157,6 +157,7 @@ module Domain_manager = Domain_manager
     to avoid a dependency on eio_main. *)
 
 module Backend = Backend
+module Thin_backend = Thin_backend
 
 (** {2 Mock errors} *)
 

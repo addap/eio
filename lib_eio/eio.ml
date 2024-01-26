@@ -4,6 +4,60 @@ module Debug = Private.Debug
 let traceln = Debug.traceln
 
 module Std = Std
+
+module ThinStd = struct
+  module Promise = Eio__thin.Promise
+  module Fiber = Eio__thin.Fiber
+  let traceln = Eio__thin.Private.Debug.traceln
+end
+
+module Thin = struct 
+  include Eio__thin
+
+  open ThinStd
+
+  (* Run below examples with Eio_mock.Thin_backend.run *)
+  (* Test forking two fibers and ignoring them completely. *)
+  let main0 () = 
+    let (_c1, _p1) = Fiber.fork_promise
+        (fun () -> for x = 1 to 3 do traceln "x = %d" x; Fiber.yield () done) in
+    let (_c2, _p2) = Fiber.fork_promise
+        (fun () -> for y = 1 to 3 do traceln "y = %d" y; Fiber.yield () done) in
+    traceln "after both are forked"
+
+  (* Test forking two fibers and awaiting them both. *)
+  let main1 () = 
+    let (_c1, p1) = Fiber.fork_promise
+        (fun () -> for x = 1 to 3 do traceln "x = %d" x; Fiber.yield () done) in
+    let (_c2, p2) = Fiber.fork_promise
+        (fun () -> for y = 1 to 3 do traceln "y = %d" y; Fiber.yield () done) in
+    Promise.await_exn p1;
+    Promise.await_exn p2;
+    traceln "after both are forked"
+
+  (* Test forking two fibers, awaiting one and cancelling the other. *)
+  let main2 () = 
+    let (_c1, p1) = Fiber.fork_promise
+        (fun () -> for x = 1 to 3 do traceln "x = %d" x; Fiber.yield () done) in
+    let (c2, _p2) = Fiber.fork_promise
+        (fun () -> for y = 1 to 100 do traceln "y = %d" y; Fiber.yield () done) in
+    Promise.await_exn p1;
+    traceln "awaited fiber 1";
+    Eio__thin.Cancel.cancel c2 (Failure "too long");
+    traceln "after both are forked"
+
+  (* Test forking two fibers, awaiting both but one cancels the other. *)
+  let main3 () = 
+    let (c1, p1) = Fiber.fork_promise
+        (fun () -> for x = 1 to 100 do traceln "x = %d" x; Fiber.yield () done) in
+    let (_c2, p2) = Fiber.fork_promise
+        (fun () -> for y = 1 to 3 do traceln "y = %d" y; Fiber.yield () done; Eio__thin.Cancel.cancel c1 (Failure "too long")) in
+    Promise.await_exn p2;
+    traceln "awaited fiber 2";
+    Promise.await_exn p1;
+    traceln "awaited fiber 1";
+end
+
 module Semaphore = Semaphore
 module Mutex = Eio_mutex
 module Condition = Condition

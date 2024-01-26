@@ -5,6 +5,7 @@ module Net = Net
 module Clock = Clock
 module Domain_manager = Domain_manager
 module Backend = Backend
+module Thin_backend = Thin_backend
 
 type Eio.Exn.Backend.t += Simulated_failure
 let () = Eio.Exn.Backend.register_pp (fun f -> function
